@@ -1077,20 +1077,122 @@ def find_selected_range_path(pszBaseDirectory: str) -> Optional[str]:
 def parse_selected_range(pszRangePath: str) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
     try:
         with open(pszRangePath, "r", encoding="utf-8", newline="") as objFile:
-            pszLine: str = objFile.readline().strip()
+            pszContent: str = objFile.read()
     except OSError:
         return None
 
-    objMatch = re.search(r"採用範囲:\s*(\d{4})年(\d{1,2})月〜(\d{4})年(\d{1,2})月", pszLine)
+    objMatch = re.search(r"開始:\s*(\d{4})/(\d{2}).*?終了:\s*(\d{4})/(\d{2})", pszContent, re.DOTALL)
     if objMatch is None:
-        return None
-    iStartYear: int = int(objMatch.group(1))
-    iStartMonth: int = int(objMatch.group(2))
-    iEndYear: int = int(objMatch.group(3))
-    iEndMonth: int = int(objMatch.group(4))
+        objMatch = re.search(r"採用範囲:\s*(\d{4})年(\d{1,2})月〜(\d{4})年(\d{1,2})月", pszContent)
+        if objMatch is None:
+            return None
+        iStartYear: int = int(objMatch.group(1))
+        iStartMonth: int = int(objMatch.group(2))
+        iEndYear: int = int(objMatch.group(3))
+        iEndMonth: int = int(objMatch.group(4))
+    else:
+        iStartYear = int(objMatch.group(1))
+        iStartMonth = int(objMatch.group(2))
+        iEndYear = int(objMatch.group(3))
+        iEndMonth = int(objMatch.group(4))
+
     if not (1 <= iStartMonth <= 12 and 1 <= iEndMonth <= 12):
         return None
     return (iStartYear, iStartMonth), (iEndYear, iEndMonth)
+
+
+def extract_year_month_from_path(pszPath: str) -> Optional[Tuple[int, int]]:
+    pszBaseName: str = os.path.basename(pszPath)
+    objMatch = re.search(r"_(\d{4})年(\d{1,2})月", pszBaseName)
+    if objMatch is None:
+        return None
+    try:
+        iYear: int = int(objMatch.group(1))
+        iMonth: int = int(objMatch.group(2))
+    except ValueError:
+        return None
+    if iMonth < 1 or iMonth > 12:
+        return None
+    return iYear, iMonth
+
+
+def find_best_continuous_range(objYearMonths: List[Tuple[int, int]]) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    if not objYearMonths:
+        return None
+
+    objSorted: List[Tuple[int, int]] = sorted(set(objYearMonths))
+    objBestRange: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None
+    iBestLength: int = 0
+    objCurrentStart: Tuple[int, int] = objSorted[0]
+    objCurrentEnd: Tuple[int, int] = objSorted[0]
+
+    for objMonth in objSorted[1:]:
+        if next_year_month(*objCurrentEnd) == objMonth:
+            objCurrentEnd = objMonth
+            continue
+
+        iCurrentLength: int = _range_length(objCurrentStart, objCurrentEnd)
+        objBestRange, iBestLength = _update_best_range(objBestRange, iBestLength, objCurrentStart, objCurrentEnd)
+        objCurrentStart = objMonth
+        objCurrentEnd = objMonth
+
+    objBestRange, _ = _update_best_range(objBestRange, iBestLength, objCurrentStart, objCurrentEnd)
+    return objBestRange
+
+
+def _range_length(objStart: Tuple[int, int], objEnd: Tuple[int, int]) -> int:
+    iYearStart, iMonthStart = objStart
+    iYearEnd, iMonthEnd = objEnd
+    return (iYearEnd * 12 + iMonthEnd) - (iYearStart * 12 + iMonthStart) + 1
+
+
+def _update_best_range(
+    objCurrentBest: Optional[Tuple[Tuple[int, int], Tuple[int, int]]],
+    iCurrentBestLength: int,
+    objCandidateStart: Tuple[int, int],
+    objCandidateEnd: Tuple[int, int],
+) -> Tuple[Optional[Tuple[Tuple[int, int], Tuple[int, int]]], int]:
+    iCandidateLength: int = _range_length(objCandidateStart, objCandidateEnd)
+    if iCandidateLength > iCurrentBestLength:
+        return (objCandidateStart, objCandidateEnd), iCandidateLength
+    if iCandidateLength == iCurrentBestLength and objCurrentBest is not None:
+        if objCandidateEnd > objCurrentBest[1]:
+            return (objCandidateStart, objCandidateEnd), iCandidateLength
+    if objCurrentBest is None:
+        return (objCandidateStart, objCandidateEnd), iCandidateLength
+    return objCurrentBest, iCurrentBestLength
+
+
+def ensure_selected_range_file(pszDirectory: str, objRange: Tuple[Tuple[int, int], Tuple[int, int]]) -> str:
+    iStartYear, iStartMonth = objRange[0]
+    iEndYear, iEndMonth = objRange[1]
+    pszOutputPath: str = os.path.join(pszDirectory, "SellGeneralAdminCost_Allocation_DnD_SelectedRange.txt")
+    pszStartText: str = f"{iStartYear:04d}/{iStartMonth:02d}"
+    pszEndText: str = f"{iEndYear:04d}/{iEndMonth:02d}"
+    objLines: List[str] = [
+        "採用範囲:",
+        f"開始: {pszStartText}",
+        f"終了: {pszEndText}",
+    ]
+    with open(pszOutputPath, "w", encoding="utf-8", newline="") as objFile:
+        objFile.write("\n".join(objLines) + "\n")
+    return pszOutputPath
+
+
+def record_created_file(_pszPath: str) -> None:
+    return
+
+
+def month_to_ordinal(objMonth: Tuple[int, int]) -> int:
+    iYear, iMonth = objMonth
+    return iYear * 12 + iMonth
+
+
+def is_month_in_range(objMonth: Tuple[int, int], objRange: Tuple[Tuple[int, int], Tuple[int, int]]) -> bool:
+    iValue: int = month_to_ordinal(objMonth)
+    iStart: int = month_to_ordinal(objRange[0])
+    iEnd: int = month_to_ordinal(objRange[1])
+    return iStart <= iValue <= iEnd
 
 
 def next_year_month(iYear: int, iMonth: int) -> Tuple[int, int]:
@@ -1578,7 +1680,8 @@ def filter_rows_by_names(
     for objRow in objRows:
         if not objRow:
             continue
-        if objRow[0] in objTargetSet:
+        pszName: str = objRow[0].strip()
+        if pszName in objTargetSet:
             objFilteredRows.append(objRow)
     return objFilteredRows
 
@@ -1690,6 +1793,11 @@ def create_pj_summary(
         "純売上高",
         "売上総利益",
         "配賦販管費",
+        "1Cカンパニー販管費",
+        "2Cカンパニー販管費",
+        "3Cカンパニー販管費",
+        "4Cカンパニー販管費",
+        "事業開発カンパニー販管費",
         "営業利益",
     ]
     objSingleStep0002Rows = filter_rows_by_names(
@@ -2217,6 +2325,58 @@ def main(argv: list[str]) -> int:
                     print_usage()
                     return 1
                 objPairs.append([objArgv[iIndex], objArgv[iIndex + 1]])
+
+    objPairsWithMonths: List[Tuple[str, str, Optional[Tuple[int, int]]]] = []
+    objParsedMonths: List[Tuple[int, int]] = []
+    for objPair in objPairs:
+        pszManhourPath: str = objPair[0]
+        pszPlPath: str = objPair[1]
+        objMonthPl: Optional[Tuple[int, int]] = extract_year_month_from_path(pszPlPath)
+        objMonthManhour: Optional[Tuple[int, int]] = extract_year_month_from_path(pszManhourPath)
+        objMonth: Optional[Tuple[int, int]] = objMonthPl if objMonthPl is not None else objMonthManhour
+        if objMonthPl is not None and objMonthManhour is not None and objMonthPl != objMonthManhour:
+            objMonth = None
+        objPairsWithMonths.append((pszManhourPath, pszPlPath, objMonth))
+        if objMonth is not None:
+            objParsedMonths.append(objMonth)
+
+    objSelectedRange: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None
+    if objParsedMonths:
+        objSelectedRange = find_best_continuous_range(objParsedMonths)
+
+    if objSelectedRange is None:
+        pszBaseDirectory: str = os.path.dirname(objPairs[0][1]) if objPairs else os.getcwd()
+        pszRangePath: Optional[str] = find_selected_range_path(pszBaseDirectory)
+        if pszRangePath is not None:
+            objSelectedRange = parse_selected_range(pszRangePath)
+        if objSelectedRange is None:
+            print("Error: 採用範囲を取得できませんでした。", file=sys.stderr)
+            return 1
+
+    objSelectedPairs: List[List[str]]
+    if objParsedMonths:
+        objSelectedPairs = [
+            [pszManhourPath, pszPlPath]
+            for pszManhourPath, pszPlPath, objMonth in objPairsWithMonths
+            if objMonth is not None and is_month_in_range(objMonth, objSelectedRange)
+        ]
+        objSelectedPairs.sort(
+            key=lambda objPair: extract_year_month_from_path(objPair[1])
+            or extract_year_month_from_path(objPair[0])
+            or (0, 0),
+        )
+    else:
+        objSelectedPairs = [objPair[:2] for objPair in objPairsWithMonths]
+
+    if not objSelectedPairs:
+        print("Error: 採用範囲に合致する入力がありません。", file=sys.stderr)
+        return 1
+
+    pszRangeFileDirectory: str = os.path.dirname(objSelectedPairs[0][1])
+    pszRangePathSelected: str = ensure_selected_range_file(pszRangeFileDirectory, objSelectedRange)
+    record_created_file(pszRangePathSelected)
+
+    objPairs = objSelectedPairs
 
     for objPair in objPairs:
         pszManhourPath: str = objPair[0]
