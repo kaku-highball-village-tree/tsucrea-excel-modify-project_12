@@ -1686,6 +1686,53 @@ def filter_rows_by_names(
     return objFilteredRows
 
 
+def aggregate_company_sg_admin_cost_rows(objRows: List[List[str]]) -> List[List[str]]:
+    if not objRows:
+        return objRows
+
+    objCompanyNames: List[str] = [
+        "1Cカンパニー販管費",
+        "2Cカンパニー販管費",
+        "3Cカンパニー販管費",
+        "4Cカンパニー販管費",
+        "事業開発カンパニー販管費",
+    ]
+    objCompanySet = set(objCompanyNames)
+    objCompanyRows: List[List[str]] = []
+    objOutputRows: List[List[str]] = []
+    iInsertIndex: Optional[int] = None
+
+    for iRowIndex, objRow in enumerate(objRows):
+        if not objRow:
+            objOutputRows.append(objRow)
+            continue
+        pszName: str = objRow[0].strip()
+        if pszName in objCompanySet:
+            objCompanyRows.append(objRow)
+            if iInsertIndex is None:
+                iInsertIndex = len(objOutputRows)
+            continue
+        objOutputRows.append(objRow)
+
+    if not objCompanyRows:
+        return objRows
+
+    iMaxColumns: int = max(len(objRow) for objRow in objCompanyRows)
+    objSumRow: List[str] = [""] * iMaxColumns
+    objSumRow[0] = "カンパニー販管費"
+    for iColumnIndex in range(1, iMaxColumns):
+        fSum: float = 0.0
+        for objRow in objCompanyRows:
+            if iColumnIndex < len(objRow):
+                fSum += parse_number(objRow[iColumnIndex])
+        objSumRow[iColumnIndex] = format_number(fSum)
+
+    if iInsertIndex is None:
+        iInsertIndex = len(objOutputRows)
+    objOutputRows.insert(iInsertIndex, objSumRow)
+    return objOutputRows
+
+
 def create_pj_summary(
     pszPlPath: str,
     objRange: Tuple[Tuple[int, int], Tuple[int, int]],
@@ -1822,6 +1869,9 @@ def create_pj_summary(
         objCumulativeOutputVerticalRows,
         objTargetNames,
     )
+    objCumulativeStep0002Rows = aggregate_company_sg_admin_cost_rows(
+        objCumulativeStep0002Rows,
+    )
     pszSingleStep0002Path: str = os.path.join(
         pszDirectory,
         "0003_PJサマリ_step0002_単月_損益計算書.tsv",
@@ -1839,6 +1889,9 @@ def create_pj_summary(
             "0003_PJサマリ_step0002_単月_製造原価報告書.tsv",
         )
         shutil.copy2(pszSingleCostReportPath, pszCostReportSingleStep0002Path)
+        objCostReportRows: List[List[str]] = read_tsv_rows(pszCostReportSingleStep0002Path)
+        objCostReportRows = aggregate_company_sg_admin_cost_rows(objCostReportRows)
+        write_tsv_rows(pszCostReportSingleStep0002Path, objCostReportRows)
     if os.path.isfile(pszCumulativeCostReportPath):
         pszCostReportCumulativeStep0002Path: str = os.path.join(
             pszDirectory,
