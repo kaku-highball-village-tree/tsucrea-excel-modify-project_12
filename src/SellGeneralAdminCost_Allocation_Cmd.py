@@ -1680,7 +1680,8 @@ def filter_rows_by_names(
     for objRow in objRows:
         if not objRow:
             continue
-        if objRow[0] in objTargetSet:
+        pszName: str = objRow[0].strip()
+        if pszName in objTargetSet:
             objFilteredRows.append(objRow)
     return objFilteredRows
 
