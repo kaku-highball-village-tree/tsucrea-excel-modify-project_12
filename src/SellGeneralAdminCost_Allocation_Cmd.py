@@ -1788,6 +1788,20 @@ def create_pj_summary(
         )
         shutil.copy2(pszCumulativeCostReportPath, pszCostReportCumulativeOutputPath)
 
+    #//
+    #// PJサマリの損益計算書部分の作成
+    #//
+    #// 科目名
+    #// 純売上高
+    #// 売上総利益
+    #// 配賦販管費
+    #// 1Cカンパニー販管費
+    #// 2Cカンパニー販管費
+    #// 3Cカンパニー販管費
+    #// 4Cカンパニー販管費
+    #// 事業開発カンパニー販管費
+    #// 営業利益
+    #//
     objTargetNames: List[str] = [
         "科目名",
         "純売上高",
